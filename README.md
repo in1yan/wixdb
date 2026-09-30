@@ -1,24 +1,24 @@
-# wix
+# WIX
 
-A monorepo containing two side-quest projects: a custom in-memory cache server (Java) and a metrics dashboard (Next.js).
+A custom in-memory database with pluggable eviction policies, built from scratch in Java. The monorepo also includes a companion metrics dashboard.
 
 ## Projects
 
 | Project | Stack | Description |
 |---|---|---|
-| [`cache-server/`](cache-server/) | Java 23, Maven | RESP-compatible in-memory cache with LRU/LFU eviction, per-entry TTL, and performance metrics |
+| [`cache-server/`](cache-server/) | Java 23, Maven | **WIX** — custom in-memory database with LRU/LFU eviction, per-entry TTL, and performance metrics |
 | [`metrics/`](metrics/) | Next.js 16, React 19, TypeScript, Tailwind CSS 4 | Metrics dashboard web app (bootstrapped starter) |
 
 ---
 
-## cache-server
+## WIX (cache-server)
 
-A lightweight, thread-safe, in-memory key-value cache server that speaks the [Redis Serialization Protocol (RESP)](https://redis.io/docs/reference/protocol-spec/). Connect to it with any standard Redis client (e.g. `redis-cli`).
+WIX is a lightweight, thread-safe, in-memory key-value database built from scratch in Java. It speaks the [RESP (REdis Serialization Protocol)](https://redis.io/docs/reference/protocol-spec/) wire format, so any RESP-compatible client (e.g. `redis-cli`) can connect to it out of the box — but WIX is its own database with its own cache engine, eviction logic, and stats tracking.
 
 ### Features
 
 - **Pluggable eviction** — LRU (Least Recently Used) and LFU (Least Frequently Used)
-- **Per-entry TTL** — independent expiration via duration or Redis `EX`/`PX` flags
+- **Per-entry TTL** — independent expiration via duration or `EX`/`PX` flags
 - **Proactive + lazy expiration** — expired keys pruned on access and swept before eviction
 - **Thread-safe** — guarded by `ReentrantLock` for fine-grained concurrency
 - **Real-time stats** — hits, misses, evictions, hit/miss rates
@@ -61,16 +61,19 @@ mvn test
 # Package standalone JAR
 mvn package
 
-# Run with defaults (port 6379, capacity 100, LRU)
+# Start WIX with defaults (port 6379, capacity 100, LRU)
 java -cp target/classes cache.Main
 
-# Run with custom configuration
+# Start WIX with custom configuration
 java -cp target/classes cache.Main --port 6380 --capacity 500 --eviction LFU
 ```
 
 ### Example Session
 
+Connect with any RESP-compatible client (e.g. `redis-cli`):
+
 ```bash
+# Connect to WIX
 redis-cli -p 6379
 
 127.0.0.1:6379> SET user:1 Alice EX 60
@@ -92,16 +95,16 @@ cache_hit_rate_pct:100.00%
 cache_miss_rate_pct:0.00%
 ```
 
-### Architecture
+### WIX Architecture
 
 ```
-cache/
+cache/                                 # WIX core engine
 ├── Cache.java            # Cache<K,V> interface
 ├── EvictionPolicy.java   # LRU / LFU enum
 ├── CacheStats.java       # Immutable stats record
 ├── InMemoryCache.java    # Core implementation (HashMap + doubly-linked list)
 ├── Main.java             # CLI entry point
-└── server/
+└── server/                            # WIX network layer
     ├── CacheServer.java  # TCP server (virtual threads)
     ├── ClientHandler.java # Per-connection command dispatch
     ├── RespParser.java   # RESP protocol parser
@@ -116,7 +119,7 @@ Runs on push to `master` and on PRs — executes `mvn -B test` on Ubuntu with JD
 
 ## metrics
 
-A Next.js 16 web application bootstrapped with `create-next-app`. Currently contains the default starter template — intended to become a metrics/analytics dashboard.
+A Next.js 16 web application bootstrapped with `create-next-app`. Currently contains the default starter template — intended to become a metrics/analytics dashboard for WIX.
 
 ### Tech Stack
 
