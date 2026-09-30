@@ -1,12 +1,15 @@
 # WIX
 
-A custom in-memory database with pluggable eviction policies, built from scratch in Java. The monorepo also includes a companion metrics dashboard.
+A custom in-memory database with pluggable eviction policies, built from scratch in Java. The monorepo also includes a companion metrics dashboard and a pattern verification suite.
 
-## Projects
+> 📖 **Full Technical Documentation**: For complete architecture diagrams, algorithmic complexity, RESP wire protocol specs, test suites, and internal data structures, see [**`DOCUMENTATION.md`**](DOCUMENTATION.md).
 
-| Project | Stack | Description |
+## Projects & Tools
+
+| Project / Tool | Stack | Description |
 |---|---|---|
 | [`cache-server/`](cache-server/) | Java 23, Maven | **WIX** — custom in-memory database with LRU/LFU eviction, per-entry TTL, and performance metrics |
+| [`cache_demo.py`](cache_demo.py) | Python 3.10+ | Standalone verification script demonstrating LRU vs. LFU eviction behavior and TTL expiration |
 | [`metrics/`](metrics/) | Next.js 16, React 19, TypeScript, Tailwind CSS 4 | Metrics dashboard web app (bootstrapped starter) |
 
 ---
