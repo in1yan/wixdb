@@ -1,14 +1,16 @@
 import { Socket } from "node:net";
 
-const HOST = process.env.CACHE_HOST ?? "127.0.0.1";
+export const HOST = process.env.CACHE_HOST ?? "127.0.0.1";
 
 /**
  * Each cache instance serves exactly one eviction policy, so the console polls
- * one endpoint per policy. LFU_PORT falls back to CACHE_PORT, which makes the
- * two panels read the same server until a second instance is configured.
+ * one endpoint per policy. Defaults to 6379 for LRU and 6380 for LFU.
  */
-const LRU_PORT = Number(process.env.CACHE_PORT ?? 6379);
-const LFU_PORT = Number(process.env.CACHE_PORT_LFU ?? process.env.CACHE_PORT ?? 6379);
+export const LRU_PORT = Number(process.env.CACHE_PORT_LRU ?? process.env.CACHE_PORT ?? 6379);
+export const LFU_PORT = Number(
+  process.env.CACHE_PORT_LFU ??
+    (process.env.CACHE_PORT && !process.env.CACHE_PORT_LRU ? Number(process.env.CACHE_PORT) : 6380)
+);
 
 const TIMEOUT_MS = 2000;
 
@@ -44,9 +46,9 @@ export type StatsResponse = {
   shared: boolean;
 };
 
-type Reply = string | string[] | number | null;
+export type Reply = string | string[] | number | null;
 
-function encodeCommand(args: string[]): string {
+export function encodeCommand(args: string[]): string {
   const parts = args.map((a) => `$${Buffer.byteLength(a)}\r\n${a}\r\n`);
   return `*${args.length}\r\n${parts.join("")}`;
 }
@@ -102,7 +104,7 @@ function readReply(buf: string): { value: Reply; rest: string } | null {
 }
 
 /** Opens one connection, pipelines every command, and returns replies in order. */
-function sendCommands(port: number, commands: string[][]): Promise<Reply[]> {
+export function sendCommands(port: number, commands: string[][]): Promise<Reply[]> {
   return new Promise((resolve, reject) => {
     const socket = new Socket();
     let buffer = "";
@@ -147,15 +149,19 @@ function sendCommands(port: number, commands: string[][]): Promise<Reply[]> {
   });
 }
 
-function parseInfo(info: string): CacheInfo {
+export function parseInfo(info: string): CacheInfo {
   const fields = new Map<string, string>();
   for (const line of info.split(/\r?\n/)) {
     const separator = line.indexOf(":");
-    if (separator > 0) fields.set(line.slice(0, separator), line.slice(separator + 1));
+    if (separator > 0) fields.set(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
   }
 
   const num = (key: string) => {
-    const value = Number(fields.get(key));
+    const raw = fields.get(key);
+    if (raw === undefined || raw === null || raw === "") {
+      throw new Error(`cache server INFO is missing numeric field "${key}"`);
+    }
+    const value = Number(raw.replace(",", "."));
     if (!Number.isFinite(value)) {
       throw new Error(`cache server INFO is missing numeric field "${key}"`);
     }

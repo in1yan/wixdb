@@ -262,6 +262,9 @@ export default function Home() {
   const [now, setNow] = useState(0);
   const [history, setHistory] = useState<History>({ LRU: [], LFU: [] });
   const [frame, setFrame] = useState(0);
+  const [selectedKeyPolicy, setSelectedKeyPolicy] = useState<Policy | null>(null);
+  const [keyValues, setKeyValues] = useState<Record<string, string>>({});
+  const [runningAction, setRunningAction] = useState<string | null>(null);
 
   const barRef = useRef<HTMLSpanElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
@@ -299,8 +302,9 @@ export default function Home() {
   const reportsLive = (policy: Policy) =>
     snapOf(policy).status === "ok" && snapOf(policy).info?.evictionPolicy.toUpperCase() === policy;
 
-  /** Keys come from whichever instance is actually serving its own policy. */
-  const keyPolicy: Policy = !reportsLive("LRU") && reportsLive("LFU") ? "LFU" : "LRU";
+  /** Keys come from selectable policy or whichever instance is live */
+  const keyPolicy: Policy =
+    selectedKeyPolicy ?? (!reportsLive("LRU") && reportsLive("LFU") ? "LFU" : "LRU");
   const keys = snapOf(keyPolicy).keys;
   const keySnap = snapOf(keyPolicy);
 
@@ -363,10 +367,58 @@ export default function Home() {
     }
   }, []);
 
+  const runAction = useCallback(
+    async (action: "reset" | "scenario", scenarioId?: number | "all") => {
+      setRunningAction(action === "reset" ? "Resetting…" : `Scenario ${scenarioId}…`);
+      try {
+        await fetch("/api/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, scenarioId }),
+        });
+        setKeyValues({});
+        await load();
+      } catch {
+        // ignore
+      } finally {
+        setRunningAction(null);
+      }
+    },
+    [load],
+  );
+
   const tick = useCallback(() => {
     setNow(Date.now());
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!online || keys.length === 0) return;
+    const missing = keys.filter((k) => keyValues[k] === undefined);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(
+      missing.slice(0, 20).map(async (k) => {
+        try {
+          const res = await fetch(
+            `/api/action?cmd=get&port=${keySnap.port}&key=${encodeURIComponent(k)}`,
+          );
+          const data = await res.json();
+          return [k, data.value ?? "nil"] as const;
+        } catch {
+          return [k, "err"] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setKeyValues((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [keys, keySnap.port, online, keyValues]);
 
   useEffect(() => {
     const anim = setInterval(() => setFrame((f) => (f + 1) % 100000), 110);
@@ -457,6 +509,25 @@ export default function Home() {
           return setSortMode((prev) =>
             prev === "value-desc" ? "value-asc" : prev === "value-asc" ? "label" : "value-desc",
           );
+        case "p":
+          event.preventDefault();
+          setKeyValues({});
+          return setSelectedKeyPolicy((prev) => (prev === "LFU" ? "LRU" : "LFU"));
+        case "1":
+          event.preventDefault();
+          return void runAction("scenario", 1);
+        case "2":
+          event.preventDefault();
+          return void runAction("scenario", 2);
+        case "3":
+          event.preventDefault();
+          return void runAction("scenario", 3);
+        case "4":
+          event.preventDefault();
+          return void runAction("scenario", 4);
+        case "0":
+          event.preventDefault();
+          return void runAction("reset");
         case "r":
           event.preventDefault();
           return void load();
@@ -465,7 +536,7 @@ export default function Home() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, load, lfuRows, lruRows, pinKey, rowTotal, showHelp]);
+  }, [active, load, lfuRows, lruRows, pinKey, rowTotal, runAction, showHelp]);
 
   const lastSync = now && fetchedAt ? now - fetchedAt : 0;
   const uptime = startedAt && now ? now - startedAt : 0;
@@ -500,14 +571,79 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col overflow-hidden text-[13px] leading-[1.5] select-none">
       {/* ── title bar ────────────────────────────────────────────── */}
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b px-4 py-1.5">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-1.5">
         <span className="flex items-baseline gap-2">
           <span className="text-[var(--term-bright)]">VINX CACHE MONITOR</span>
           <span className="text-[var(--term-faint)]">v0.1.0</span>
+          {runningAction && (
+            <span className="ml-2 text-xs text-[var(--term-bar)] animate-pulse">
+              ● {runningAction}
+            </span>
+          )}
         </span>
-        <span className="hidden items-center gap-4 text-[var(--term-dim)] lg:flex">
+
+        {/* ── scenario execution actions ── */}
+        <div className="flex items-center gap-1.5 text-xs">
+          <button
+            type="button"
+            disabled={!online || !!runningAction}
+            onClick={() => void runAction("scenario", 1)}
+            title="Scenario 1: Capacity overflow eviction test [Key: 1]"
+            className="cursor-pointer rounded border border-[var(--term-line)] bg-[var(--term-panel)] px-2 py-0.5 text-[var(--term-fg)] hover:bg-[var(--term-sel)] hover:text-[var(--term-bright)] disabled:opacity-40"
+          >
+            S1: Overflow
+          </button>
+          <button
+            type="button"
+            disabled={!online || !!runningAction}
+            onClick={() => void runAction("scenario", 2)}
+            title="Scenario 2: Frequency vs. recency conflict [Key: 2]"
+            className="cursor-pointer rounded border border-[var(--term-line)] bg-[var(--term-panel)] px-2 py-0.5 text-[var(--term-fg)] hover:bg-[var(--term-sel)] hover:text-[var(--term-bright)] disabled:opacity-40"
+          >
+            S2: Recency/Freq
+          </button>
+          <button
+            type="button"
+            disabled={!online || !!runningAction}
+            onClick={() => void runAction("scenario", 3)}
+            title="Scenario 3: Scan burst pollution test [Key: 3]"
+            className="cursor-pointer rounded border border-[var(--term-line)] bg-[var(--term-panel)] px-2 py-0.5 text-[var(--term-fg)] hover:bg-[var(--term-sel)] hover:text-[var(--term-bright)] disabled:opacity-40"
+          >
+            S3: Scan
+          </button>
+          <button
+            type="button"
+            disabled={!online || !!runningAction}
+            onClick={() => void runAction("scenario", 4)}
+            title="Scenario 4: Per-entry TTL expiration test [Key: 4]"
+            className="cursor-pointer rounded border border-[var(--term-line)] bg-[var(--term-panel)] px-2 py-0.5 text-[var(--term-fg)] hover:bg-[var(--term-sel)] hover:text-[var(--term-bright)] disabled:opacity-40"
+          >
+            S4: TTL
+          </button>
+          <button
+            type="button"
+            disabled={!online || !!runningAction}
+            onClick={() => void runAction("scenario", "all")}
+            title="Run full comparison scenario"
+            className="cursor-pointer rounded border border-[var(--term-bar)] bg-[var(--term-panel)] px-2 py-0.5 text-[var(--term-bright)] hover:bg-[var(--term-bar)] hover:text-black disabled:opacity-40 font-medium"
+          >
+            ⚡ Full Demo
+          </button>
+          <button
+            type="button"
+            disabled={!online || !!runningAction}
+            onClick={() => void runAction("reset")}
+            title="Flush both databases (FLUSHDB) [Key: 0]"
+            className="cursor-pointer rounded border border-red-900/60 bg-[var(--term-panel)] px-2 py-0.5 text-red-400 hover:bg-red-950 hover:text-red-200 disabled:opacity-40"
+          >
+            🔄 Reset
+          </button>
+        </div>
+
+        <span className="hidden items-center gap-3 text-[var(--term-dim)] xl:flex text-xs">
           <Hint keys="↑↓" label="move" />
           <Hint keys="space" label="pin" />
+          <Hint keys="p" label="key policy" />
           <Hint keys="s" label="sort" />
           <Hint keys="r" label="refresh" />
           <Hint keys="?" label="help" />
@@ -611,7 +747,37 @@ export default function Home() {
           <section>
             <div className="flex items-center gap-4 border-y border-[var(--term-line)] px-4 py-1">
               <span className="text-[var(--term-bright)]">KEYS</span>
-              <span className="text-[var(--term-faint)]">{keyPolicy} · 127.0.0.1:{keySnap.port || "—"}</span>
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedKeyPolicy("LRU");
+                    setKeyValues({});
+                  }}
+                  className={`cursor-pointer px-1.5 py-0.5 rounded transition-colors ${
+                    keyPolicy === "LRU"
+                      ? "bg-[var(--term-sel)] text-[var(--term-bright)] font-semibold"
+                      : "text-[var(--term-faint)] hover:text-[var(--term-dim)]"
+                  }`}
+                >
+                  LRU (:{snapOf("LRU").port || 6379})
+                </button>
+                <span className="text-[var(--term-faint)]">·</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedKeyPolicy("LFU");
+                    setKeyValues({});
+                  }}
+                  className={`cursor-pointer px-1.5 py-0.5 rounded transition-colors ${
+                    keyPolicy === "LFU"
+                      ? "bg-[var(--term-sel)] text-[var(--term-bright)] font-semibold"
+                      : "text-[var(--term-faint)] hover:text-[var(--term-dim)]"
+                  }`}
+                >
+                  LFU (:{snapOf("LFU").port || 6380})
+                </button>
+              </div>
               <span className="ml-auto text-[var(--term-faint)]">
                 {keys.length} listed · {count(keySnap.info?.currentSize ?? 0)}/
                 {count(keySnap.info?.maxCapacity ?? 0)} resident
@@ -621,7 +787,7 @@ export default function Home() {
             <div className="flex items-center gap-4 px-4 py-px text-[var(--term-faint)]">
               <span className="w-[20ch] shrink-0">KEY NAME</span>
               <span className="w-[13ch] shrink-0 text-right">#</span>
-              <span className="min-w-[12ch] flex-1">TTL / FREQUENCY</span>
+              <span className="min-w-[12ch] flex-1">STORED VALUE</span>
             </div>
 
             {keys.length === 0 ? (
@@ -632,9 +798,10 @@ export default function Home() {
               keys.map((key, index) => {
                 const position = lruCount + lfuCount + index;
                 const isCursor = position === cursor;
+                const val = keyValues[key];
                 return (
                   <div
-                    key={`${key}-${index}`}
+                    key={`${keyPolicy}-${key}-${index}`}
                     data-cursor={isCursor}
                     onClick={() => setSelected(position)}
                     className={`flex cursor-default items-center gap-4 px-4 py-px ${
@@ -650,7 +817,17 @@ export default function Home() {
                     <span className="w-[13ch] shrink-0 text-right tabular-nums text-[var(--term-faint)]">
                       {String(index + 1).padStart(3, "0")}
                     </span>
-                    <span className="min-w-[12ch] flex-1 text-[var(--term-faint)]">— not exposed —</span>
+                    <span className="min-w-[12ch] flex-1 truncate font-mono text-[var(--term-dim)]">
+                      {val !== undefined ? (
+                        val === "nil" ? (
+                          <span className="text-[var(--term-faint)] italic">(nil)</span>
+                        ) : (
+                          `"${val}"`
+                        )
+                      ) : (
+                        <span className="text-[var(--term-faint)]">loading…</span>
+                      )}
+                    </span>
                   </div>
                 );
               })
@@ -704,7 +881,13 @@ export default function Home() {
             {active === null
               ? "no row selected"
               : active.kind === "key"
-                ? `key ${active.index + 1}/${keys.length} — ${active.name || "∅"} — no per-key ttl or frequency in the protocol`
+                ? `key ${active.index + 1}/${keys.length} — ${active.name || "∅"} = ${
+                    keyValues[active.name] !== undefined
+                      ? keyValues[active.name] === "nil"
+                        ? "(nil)"
+                        : `"${keyValues[active.name]}"`
+                      : "…"
+                  } · ${keyPolicy} (127.0.0.1:${keySnap.port})`
                 : `${active.row.label} · ${active.policy} — ${active.row.note}`}
           </span>
           <span className="ml-auto shrink-0">
@@ -893,6 +1076,9 @@ const HELP: [string, string][] = [
   ["a", "pin everything"],
   ["n", "clear all pins"],
   ["s", "cycle sort order"],
+  ["p", "toggle LRU/LFU keys view"],
+  ["1, 2, 3, 4", "run test scenarios on cache"],
+  ["0", "reset / FLUSHDB both caches"],
   ["r", "refresh immediately"],
   ["?", "toggle this panel"],
   ["esc", "dismiss"],

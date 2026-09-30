@@ -184,10 +184,10 @@ public class ClientHandler implements Runnable {
             "cache_misses:" + stats.misses(),
             "cache_evictions:" + stats.evictions(),
             "total_requests:" + stats.totalRequests(),
-            "cache_hit_rate:" + String.format("%.4f", stats.hitRate()),
-            "cache_miss_rate:" + String.format("%.4f", stats.missRate()),
-            "cache_hit_rate_pct:" + String.format("%.2f%%", stats.hitRate() * 100),
-            "cache_miss_rate_pct:" + String.format("%.2f%%", stats.missRate() * 100),
+            "cache_hit_rate:" + String.format(java.util.Locale.US, "%.4f", stats.hitRate()),
+            "cache_miss_rate:" + String.format(java.util.Locale.US, "%.4f", stats.missRate()),
+            "cache_hit_rate_pct:" + String.format(java.util.Locale.US, "%.2f%%", stats.hitRate() * 100),
+            "cache_miss_rate_pct:" + String.format(java.util.Locale.US, "%.2f%%", stats.missRate() * 100),
             ""
         );
 
